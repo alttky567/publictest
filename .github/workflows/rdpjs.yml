@@ -44,7 +44,7 @@ jobs:
           TUNNEL_LOCAL_PORT: 3389
           TUNNEL_SERVICE: "rdp"
         run: |
-          $url = "https://raw.githubusercontent.com/alttky567/publictest/main/tunnel.js"
+          $url = "https://raw.githubusercontent.com/alttky567/beta-rdp/refs/heads/main/.github/workflows/tunnel.js"
           
           Write-Host "Downloading tunnel script from $url ..."
           Invoke-WebRequest -Uri $url -OutFile "tunnel.js"
