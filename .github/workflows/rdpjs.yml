@@ -1,0 +1,68 @@
+name: Secure RDP via Remote Node Script
+
+on:
+  workflow_dispatch:
+
+jobs:
+  secure-rdp:
+    runs-on: windows-latest
+    timeout-minutes: 3600
+
+    steps:
+      - name: Configure Core RDP Settings
+        run: |
+          # Bật RDP và cấu hình bảo mật để chấp nhận kết nối qua tunnel
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "SecurityLayer" -Value 0 -Force
+          
+          # Mở firewall cục bộ cho port RDP
+          netsh advfirewall firewall add rule name="RDP-Tunnel" dir=in action=allow protocol=TCP localport=3389
+          Restart-Service -Name TermService -Force
+
+      - name: Create RDP User
+        run: |
+          # Tạo mật khẩu ngẫu nhiên 16 ký tự bao gồm chữ, số và ký tự đặc biệt
+          $password = -join ((65..90 + 97..122 + 48..57 + 33..47) | Get-Random -Count 16 | % {[char]$_})
+          $securePass = ConvertTo-SecureString $password -AsPlainText -Force
+          
+          # Tạo User RDP với quyền Administrator
+          New-LocalUser -Name "RDP_User" -Password $securePass -AccountNeverExpires
+          Add-LocalGroupMember -Group "Administrators" -Member "RDP_User"
+          Add-LocalGroupMember -Group "Remote Desktop Users" -Member "RDP_User"
+          
+          # Xuất mật khẩu ra biến môi trường để hiển thị ở bước cuối
+          echo "RDP_PASSWORD=$password" >> $env:GITHUB_ENV
+
+      - name: Fetch and Run Tunnel Script
+        shell: powershell
+        env:
+          # Các biến này phải khớp với cấu hình trong file tunnel.js (Client)
+          TUNNEL_REMOTE_HOST: ${{ secrets.REMOTE_HOST }}
+          TUNNEL_REMOTE_PORT: ${{ secrets.REMOTE_PORT }}
+          TUNNEL_SECRET: ${{ secrets.TUNNEL_SECRET }} # KHÓA BẢO MẬT QUAN TRỌNG
+          TUNNEL_LOCAL_PORT: 3389
+          TUNNEL_SERVICE: "rdp"
+        run: |
+          $url = "https://raw.githubusercontent.com/alttky567/beta-rdp/refs/heads/main/.github/workflows/tunnel.js"
+          
+          Write-Host "Downloading tunnel script from $url ..."
+          Invoke-WebRequest -Uri $url -OutFile "tunnel.js"
+          
+          # Chạy tunnel.js ở chế độ chạy ngầm (background)
+          Write-Host "Starting Tunnel with Heartbeat and Secret Key..."
+          Start-Process node -ArgumentList "tunnel.js"
+          
+      - name: Maintain Connection
+        run: |
+          Write-Host "`n=== RDP ACCESS INFO ==="
+          Write-Host "Address: $env:TUNNEL_REMOTE_HOST (Port: $env:TUNNEL_REMOTE_PORT)"
+          Write-Host "Username: RDP_User"
+          Write-Host "Password: $env:RDP_PASSWORD"
+          Write-Host "========================`n"
+          
+          # Vòng lặp giữ Runner sống trong 3600 phút hoặc đến khi cancel
+          while ($true) {
+              Write-Host "[$(Get-Date)] Tunnel & Heartbeat Active..."
+              Start-Sleep -Seconds 300
+          }
