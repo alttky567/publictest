@@ -27,9 +27,9 @@ jobs:
           $securePass = ConvertTo-SecureString $password -AsPlainText -Force
           
           # Tạo User RDP với quyền Administrator
-          New-LocalUser -Name "RDP_User" -Password $securePass -AccountNeverExpires
-          Add-LocalGroupMember -Group "Administrators" -Member "RDP_User"
-          Add-LocalGroupMember -Group "Remote Desktop Users" -Member "RDP_User"
+          New-LocalUser -Name "tiki" -Password $securePass -AccountNeverExpires
+          Add-LocalGroupMember -Group "Administrators" -Member "tiki"
+          Add-LocalGroupMember -Group "Remote Desktop Users" -Member "tiki"
           
           # Xuất mật khẩu ra biến môi trường để hiển thị ở bước cuối
           echo "RDP_PASSWORD=$password" >> $env:GITHUB_ENV
