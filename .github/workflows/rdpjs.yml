@@ -56,8 +56,7 @@ jobs:
       - name: Maintain Connection
         run: |
           Write-Host "`n=== RDP ACCESS INFO ==="
-          Write-Host "Address: $env:TUNNEL_REMOTE_HOST (Port: $env:TUNNEL_REMOTE_PORT)"
-          Write-Host "Username: RDP_User"
+          Write-Host "Username: tiki"
           Write-Host "Password: $env:RDP_PASSWORD"
           Write-Host "========================`n"
           
