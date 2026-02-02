@@ -1,11 +1,11 @@
 const net = require('net');
 
-// Cấu hình từ biến môi trường (Environment Variables)
+// Cấu hình từ biến môi trường
 const SERVICE_ID = process.env.TUNNEL_SERVICE || 'rdp';
 const LOCAL_PORT = parseInt(process.env.TUNNEL_LOCAL_PORT) || 3389;
 const REMOTE_HOST = process.env.TUNNEL_REMOTE_HOST;
 const REMOTE_PORT = parseInt(process.env.TUNNEL_REMOTE_PORT);
-const SECRET_KEY = process.env.TUNNEL_SECRET; // Lấy từ GitHub Secret
+const SECRET_KEY = process.env.TUNNEL_SECRET;
 
 if (!REMOTE_HOST || !REMOTE_PORT || !SECRET_KEY) {
   console.error("Thiếu cấu hình: REMOTE_HOST, REMOTE_PORT hoặc TUNNEL_SECRET!");
@@ -15,31 +15,34 @@ if (!REMOTE_HOST || !REMOTE_PORT || !SECRET_KEY) {
 let controlSocket = null;
 let heartbeatTimer = null;
 
+// Hàm tối ưu hóa socket để truyền tải dữ liệu nhanh nhất
+function optimizeSocket(socket) {
+  socket.setNoDelay(true); // Tắt thuật toán Nagle: gửi gói tin ngay lập tức
+  socket.setKeepAlive(true, 5000); // Giữ kết nối luôn nóng, phát hiện đứt mạng sau 5s
+  socket.setTimeout(0); // Không bao giờ timeout khi đang truyền dữ liệu
+}
+
 function createControlConnection() {
-  console.log(`[SYSTEM] Đang kết nối tunnel cho dịch vụ: ${SERVICE_ID}`);
+  console.log(`[SYSTEM] Đang kết nối tunnel cho: ${SERVICE_ID}`);
   
   controlSocket = net.connect({
     host: REMOTE_HOST,
     port: REMOTE_PORT
   }, () => {
+    optimizeSocket(controlSocket);
     console.log('[CONTROL] Đã kết nối tới server trung gian.');
-    // Gửi định danh kèm Secret Key để xác thực
     controlSocket.write(`TUNNEL|${SERVICE_ID}|${SECRET_KEY}\n`);
   });
 
   controlSocket.on('data', (data) => {
     const msg = data.toString();
-    
     if (msg.startsWith('OK')) {
-      console.log(`\n✅ TUNNEL ACTIVE`);
-      console.log(`Dịch vụ: ${SERVICE_ID} (localhost:${LOCAL_PORT})`);
-      console.log(`Công khai: ${REMOTE_HOST}:${REMOTE_PORT}\n`);
-      
-      startHeartbeat(); // Bắt đầu gửi PING định kỳ
+      console.log(`✅ TUNNEL ACTIVE - Optimized for RDP`);
+      startHeartbeat();
       listenForNewConnections();
     } else if (msg.startsWith('ERROR')) {
       console.error(`[AUTH] Lỗi xác thực: ${msg.trim()}`);
-      process.exit(1); // Sai Secret Key thì dừng luôn
+      process.exit(1);
     }
   });
 
@@ -48,20 +51,19 @@ function createControlConnection() {
   });
 
   controlSocket.on('close', () => {
-    console.log('[CONTROL] Kết nối bị ngắt. Đang thử lại sau 5 giây...');
+    console.log('[CONTROL] Kết nối bị ngắt. Đang thử lại...');
     stopHeartbeat();
     setTimeout(createControlConnection, 5000);
   });
 }
 
-// Cơ chế Heartbeat để giữ server trung gian không bị timeout
 function startHeartbeat() {
   stopHeartbeat();
   heartbeatTimer = setInterval(() => {
     if (controlSocket && controlSocket.writable) {
       controlSocket.write('PING\n');
     }
-  }, 10000); // Gửi PING mỗi 10 giây
+  }, 10000); //
 }
 
 function stopHeartbeat() {
@@ -73,18 +75,14 @@ function stopHeartbeat() {
 
 function listenForNewConnections() {
   let buffer = Buffer.alloc(0);
-  
   controlSocket.on('data', (chunk) => {
     buffer = Buffer.concat([buffer, chunk]);
-    
     let idx;
     while ((idx = buffer.indexOf('\n')) !== -1) {
       const line = buffer.slice(0, idx).toString('utf8');
       buffer = buffer.slice(idx + 1);
-      
       const [cmd, connId] = line.split('|');
       if (cmd === 'NEW') {
-        console.log(`[CLIENT] Kết nối mới: ${connId}`);
         handleNewConnection(connId);
       }
     }
@@ -92,20 +90,22 @@ function listenForNewConnections() {
 }
 
 function handleNewConnection(connId) {
-  // 1. Kết nối tới dịch vụ local (RDP/SSH)
+  // Kết nối tới dịch vụ local (RDP)
   const localSocket = net.connect({
     host: '127.0.0.1',
     port: LOCAL_PORT
   }, () => {
-    // 2. Kết nối tới server trung gian để làm đường truyền dữ liệu (Data Bridge)
+    optimizeSocket(localSocket); // Tối ưu luồng RDP nội bộ
+    
+    // Tạo luồng dữ liệu lên server trung gian
     const dataSocket = net.connect({
       host: REMOTE_HOST,
       port: REMOTE_PORT
     }, () => {
-      // Gửi header DATA để server trung gian biết đây là luồng dữ liệu của connId nào
+      optimizeSocket(dataSocket); // Tối ưu luồng dữ liệu đi xa
       dataSocket.write(`DATA|${SERVICE_ID}|${connId}\n`);
       
-      // Nối ống dữ liệu hai chiều
+      // Nối ống dữ liệu trực tiếp với buffer lớn
       localSocket.pipe(dataSocket);
       dataSocket.pipe(localSocket);
     });
