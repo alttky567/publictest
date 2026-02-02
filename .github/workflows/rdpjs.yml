@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  secure-rdp:
+  node-spaceify:
     runs-on: windows-latest
     timeout-minutes: 3600
 
