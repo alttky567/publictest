@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  node-spaceify:
+  node-spaceify-de28.spaceify.eu:
     runs-on: windows-latest
     timeout-minutes: 3600
 
